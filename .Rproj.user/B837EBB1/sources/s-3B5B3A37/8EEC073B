@@ -1,0 +1,27 @@
+{
+    "id": "8EEC073B",
+    "path": "~/Dropbox/Projects/cave_parrot_dialects/README.Rmd",
+    "project_path": "README.Rmd",
+    "type": "r_markdown",
+    "hash": "1671971642",
+    "contents": "",
+    "dirty": false,
+    "created": 1664899325844.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "chunk_output_type": "console",
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "4,39",
+        "scrollLine": "0"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1664905750,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1664905750486,
+    "read_only": false,
+    "read_only_alternatives": []
+}

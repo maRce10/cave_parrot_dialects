@@ -1,0 +1,706 @@
+---
+title: <center><font size="7"><b>Compare baRulho SIGPRO measurements</b></font></center>
+subtitle: <center><font size="4"><b>baRulho papper</b> <br>Universidad de Costa Rica</font></center>
+author: <center><font size="3"><a href="https://marceloarayasalas.weebly.com/">Marcelo Araya-Salas</a></font></center>
+date: <center>"`r Sys.Date()`"</center>
+output:
+  html_document:
+    code_folding: hide
+    # css: extra.css
+    df_print: tibble
+    highlight: pygments  
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: yes
+      smooth_scroll: yes
+fontsize: 12pt 
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r load packages, echo = FALSE, message = FALSE, warning=FALSE}
+
+# github packages must include user name ("user/package")
+# knitr is require for creating html/pdf/word reports
+# kableExtra is used to print pretty formatted tables 
+# formatR is used for soft-wrapping code
+# klippy is used for adding a copy button to each code block
+pkgs <- c("rlesur/klippy", "kableExtra", "knitr", "formatR", "rprojroot", "readxl", "ggplot2", "viridis", "corrplot", "maRce10/baRulho", "irr")
+
+# install/ load packages
+out <- lapply(pkgs, function(y) {
+  
+  # get pakage name
+  pkg <- strsplit(y, "/")[[1]]
+  pkg <- pkg[length(pkg)]
+  
+  # check if installed, if not then install 
+  if (!pkg %in% installed.packages()[,"Package"])  {
+
+      if (grepl("/", y))  remotes::install_github(y, force = TRUE) else
+    install.packages(y) 
+    }
+
+  # load package
+  a <- try(require(pkg, character.only = T), silent = T)
+
+  if (!a) remove.packages(pkg)
+ })
+
+```
+
+```{r setup chunks, include = FALSE}
+
+# set working directory as project directory or one directory above,
+rootdir <- try(rprojroot::find_rstudio_root_file(), silent = TRUE)
+if (is(rootdir, "try-error")) rootdir <-  ".."
+opts_knit$set(root.dir = rootdir)
+
+# options to customize chunk outputs
+knitr::opts_chunk$set(
+  class.source = "numberLines lineAnchors", # for code line numbers
+  tidy.opts = list(width.cutoff = 65), 
+  tidy = TRUE,
+  message = FALSE,
+  warning = FALSE
+ )
+
+# this is a customized printing style data frames 
+# screws up tibble function
+tibble <- function(x, ...) { 
+  x <- kbl(x, digits=4, align= 'c', row.names = FALSE) 
+   x <- kable_styling(x, position ="center", full_width = FALSE,  bootstrap_options = c("striped", "hover", "condensed", "responsive")) 
+   asis_output(x)
+}
+
+registerS3method("knit_print", "data.frame", tibble)
+
+# to add copy button to code blocks
+klippy::klippy(position = c('top', 'right'))
+
+theme_set(theme_classic(base_size = 20))
+
+cap_fun <- function(x) {
+    s <- strsplit(x, " ")[[1]]
+    paste(toupper(substring(s, 1, 1)), substring(s, 2),
+          sep = "", collapse = " ")
+}
+
+```
+
+<style>
+body
+  { counter-reset: source-line 0; }
+pre.numberSource code
+  { counter-reset: none; }
+</style>
+
+
+<!-- '&nbsp;' adds blank space -->
+
+&nbsp; 
+
+<!-- skyblue box -->
+
+<div class="alert alert-info">
+
+# Purpose
+
+- Explore SIGPRO output
+
+- Compare measurements between SIGPRO and baRulho
+
+</div>
+
+&nbsp; 
+
+<!-- light brown box -->
+
+
+<div class="alert alert-warning">
+
+# Report overview
+
+  - [Explore SIGPRO data](#explore-sigpro-data)
+  - [Compare SIGPRO and baRulho](#compare-sigpro-and-barulho)
+  - [Takeaways](#takeaways)
+
+</div>
+
+&nbsp;
+
+
+# Explore SIGPRO data
+
+- Clips: measurements on cuts right at the start of the re-recorded sounds. **More precise**.
+- Full recordings: measurements taken on the original re-recored files, so start of sounds was foud manually. **Less precise**. This is the default method when using SIGPRO.
+
+- K is the ratio between the average amplitude envelope of the model and re-recorded sound. It is used to calculate excess attenuation
+
+```{r}
+
+sigpro_data <- as.data.frame(read_excel("./data/raw/sigpro_measuremens.xlsx"))
+
+# exclude measurements on the first round for clips (did not include TSR)
+sigpro_data <- sigpro_data[sigpro_data$format != "Clips 1st round", ]
+
+names(sigpro_data)[names(sigpro_data) %in% c("Blur ratio (E-blur)", "E-Match k" )]<- c("blur_ratio", "k")
+
+# fix outliers
+sigpro_data$blur_ratio[sigpro_data$blur_ratio > 20] <- NA
+
+sigpro_data$k[sigpro_data$k > 20] <- NA
+
+# fix labels
+sigpro_data$format <- ifelse(sigpro_data$format == "Preciso", "Clips", "Full recording")
+
+
+# excess attenuation no extra dB adding 
+#chirras
+sigpro_data$excess_attenuation <- (-20 * log(sigpro_data$k)) - (6 / (2 * (sigpro_data$distance - 1)))
+
+# Darden
+# sigpro_data$excess_attenuation <- (-20 * log(sigpro_data$k)) - (20 * log(sigpro_data$distance / 10))
+
+
+# Maad
+# att_geo_fac <- 1 / 20
+# -20*log10(att_geo_fac)
+# sigpro_data$excess_attenuation.maad <- (-20 * log10(sigpro_data$k)) - (20 * log10(1 / sigpro_data$distance))
+# sigpro_data$excess_attenuation.luis <- (-20 * log(sigpro_data$k)) - (6 / (2 * (sigpro_data$distance - 1)))
+
+sigpro_data$excess_attenuation[is.infinite(sigpro_data$excess_attenuation)] <- NA
+# sigpro_data$excess_attenuation.luis[is.infinite(sigpro_data$excess_attenuation.luis)] <- NA
+
+degrad_params <- c("SNR", "TSR", "blur_ratio", "k", "excess_attenuation")
+
+```
+
+```{r, eval = FALSE}
+## Plot distributions
+
+
+ggs <- lapply(degrad_params, function(x){
+ggplot(data = sigpro_data, mapping = aes(x = get(x))) +
+    geom_histogram(fill = viridis(10,alpha = 0.7)[7]) +
+        labs(x = gsub("_", " ", x)) +
+    facet_wrap(~ format)
+})
+names(ggs) <-degrad_params
+
+ggs
+
+```
+
+
+## Correlation between variables
+
+### Clips
+```{r correlation among metrics clips, out.width = "120%"}
+
+degrad_params_clips <- degrad_params[degrad_params != "TSR"]
+
+cormat <- cor(sigpro_data[sigpro_data$format == "Clips", degrad_params_clips], use = "pairwise.complete.obs")
+
+rownames(cormat) <- colnames(cormat) <- degrad_params_clips
+
+cols_corr <- colorRampPalette(c("white", "white", viridis(4, direction = -1)))(10)
+
+cp <- corrplot.mixed(cormat, tl.cex = 0.7,
+               upper.col = cols_corr,
+               lower.col = cols_corr,
+               order = "hclust",
+               lower = "number", 
+               upper = "ellipse",
+               tl.col = "black")
+
+```
+
+### Full recordings
+```{r correlation among metrics full recordings, out.width = "120%"}
+
+cormat <- cor(sigpro_data[sigpro_data$format == "Full recording", degrad_params], use = "pairwise.complete.obs")
+
+rownames(cormat) <- colnames(cormat) <- degrad_params
+
+cols_corr <- colorRampPalette(c("white", "white", viridis(4, direction = -1)))(10)
+
+cp <- corrplot.mixed(cormat, tl.cex = 0.7,
+               upper.col = cols_corr,
+               lower.col = cols_corr,
+               order = "hclust",
+               lower = "number", 
+               upper = "ellipse",
+               tl.col = "black")
+
+```
+
+&nbsp;
+
+## Change with distance
+```{r plots distance, eval = TRUE, echo = FALSE, fig.width= 10, results='asis'}
+
+plts <- lapply(degrad_params, function(x){
+  
+
+  form <- as.formula(paste(x, "~ format + distance"))
+  
+  agg <- aggregate(form, data = sigpro_data, mean)
+  
+  names(agg)[ncol(agg)] <- "variable"
+  
+  agg$sd <- aggregate(form, data = sigpro_data, sd)[, x] 
+  
+  plt <- ggplot(agg, aes(x = distance, y = variable, color = format)) +
+    geom_line(position = position_dodge(0.25)) +
+    geom_point(position = position_dodge(0.25))+
+    scale_color_viridis_d(alpha = 0.7, begin = 0.2, end = 0.8) +
+    geom_errorbar(aes(ymin = variable - sd, 
+                      ymax = variable + sd), width = .2,
+                   position = position_dodge(0.25)) +
+    labs(x = "Distance (m)", y = gsub("\\.", " ", x)) +
+    scale_x_continuous(breaks=sort(unique(sigpro_data$distance))) +
+    theme_classic() 
+  
+  return(plt)
+    
+})
+
+names(plts) <- degrad_params
+
+for(i in 1:length(plts)){
+  
+  cat(paste('<font size="2"> ', gsub("\\.", " ", cap_fun(names(plts)[i])), "</font>"))
+
+  cat("<br>")
+  
+  print(plts[[i]])
+  
+  cat("&nbsp;")
+  
+  }
+  
+```
+
+# Compare SIGPRO and baRulho
+
+```{r From measurements taken on larger data set, eval= TRUE}
+
+degrad_df <- read.csv("./data/processed/barulho_degradation_metrics.csv",
+    stringsAsFactors = FALSE)
+
+sigpro_data$sound.files <- paste0(sigpro_data$org.sf, ".wav_", sigpro_data$sound)
+
+sigpro_data$source <- "sigpro"
+
+barulho_data <- sigpro_data
+barulho_data$source <- "baRulho"
+
+
+barulho_data$SNR <- sapply(1:nrow(barulho_data), function(x) {
+
+    y <- degrad_df$signal.to.noise.ratio[degrad_df$sound.files ==
+        sigpro_data$sound.files[x]]
+
+    if (length(y) == 0)
+        y <- NA
+
+    return(y)
+})
+
+barulho_data$blur_ratio <- sapply(1:nrow(barulho_data), function(x) {
+
+    y <- degrad_df$blur.ratio[degrad_df$sound.files == sigpro_data$sound.files[x]]
+
+    if (length(y) == 0)
+        y <- NA
+
+    return(y)
+})
+
+
+
+barulho_data$TSR <- sapply(1:nrow(barulho_data), function(x) {
+
+    y <- degrad_df$tail.to.signal.ratio[degrad_df$sound.files == sigpro_data$sound.files[x]]
+
+    if (length(y) == 0)
+        y <- NA
+
+    return(y)
+})
+
+barulho_data$excess_attenuation <- sapply(1:nrow(barulho_data), function(x) {
+
+    y <- degrad_df$excess.attenuation[degrad_df$sound.files == sigpro_data$sound.files[x]]
+
+    if (length(y) == 0)
+        y <- NA
+
+    return(y)
+  return(y)
+})
+
+comb_data_rows <- rbind(barulho_data, sigpro_data)
+
+barulho_subdata <- barulho_data[, c("SNR", "TSR", "blur_ratio",
+    "k", "excess_attenuation")]
+
+names(barulho_subdata) <- paste(names(barulho_subdata), "bRlho", sep = "-")
+
+
+comb_data_cols <- cbind(sigpro_data, barulho_subdata)
+```
+
+```{r, fig.height=3, results='asis', eval= TRUE}
+
+for (x in c("SNR", "blur_ratio", "excess_attenuation")){
+
+    cat("<br>")
+    cat(x)
+    cat("<br>")
+    # print(paste('Pearson correlation clips:',
+    # round(cor(comb_data_cols[comb_data_cols$format == 'Clips',
+    # x], comb_data_cols[comb_data_cols$format == 'Clips',
+    # paste(x, 'bRlho', sep = '-')], use =
+    # 'pairwise.complete.obs'), 2)))
+
+    if (x != "TSR") {
+        cr.clps <- cor.test(comb_data_cols[comb_data_cols$format ==
+            "Clips", x], comb_data_cols[comb_data_cols$format == "Clips",
+            paste(x, "bRlho", sep = "-")], use = "pairwise.complete.obs")
+        p <- round(cr.clps$p.value, 3)
+        if (p < 0.001)
+            p <- "p < 0.001"
+        print(paste("Pearson correlation clips: r=", round(cr.clps$estimate,
+            2), "; p =", p))
+    }
+    cat("<br>")
+    cr.fr <- cor.test(comb_data_cols[comb_data_cols$format != "Clips",
+        x], comb_data_cols[comb_data_cols$format != "Clips", paste(x,
+        "bRlho", sep = "-")], use = "pairwise.complete.obs")
+    p <- round(cr.fr$p.value, 3)
+    if (p < 0.001)
+        p <- "p < 0.001"
+    print(paste("Pearson correlation full recordings: r=", round(cr.fr$estimate,
+        2), "; p =", p))
+
+    plt <- ggplot(comb_data_cols, aes(x = get(x), y = get(paste(x,
+        "bRlho", sep = "-")))) + geom_point(color = viridis(10, alpha = 0.7)[7]) +
+        labs(x = paste(x, "SIGPRO"), y = paste(x, "baRulho")) + facet_wrap(~format,
+        scales = "free_x") + geom_abline(slope = 1, intercept = 0,
+        lty = 3) + theme_classic()
+
+    cat("<br>")
+
+    print(plt)
+}
+
+```
+
+
+Re-measuring transmission parameters:
+```{r read data est simulations, eval = FALSE, echo = FALSE}
+
+est.alg.sim.all <- readRDS("./data/raw/extended_sel_tab_tests_simulated_tests_sounds.RDS")
+
+names(est.alg.sim.all)[13] <- "distance" 
+
+est.alg.sim.all$signal.type <- as.character(est.alg.sim.all$template)
+
+sigpro_data$sound.files <- paste0(sigpro_data$org.sf, ".wav_", sigpro_data$sound)
+
+sum(est.alg.sim.all$sound.files %in% sigpro_data$sound.files)
+
+est_sigpro_subdata <- est.alg.sim.all[(est.alg.sim.all$sound.files %in% sigpro_data$sound.files) | (est.alg.sim.all$distance == 1 & sapply(strsplit(est.alg.sim.all$sound.files, "_"), function(x) x[[2]]) %in%  sigpro_data$sound), ]
+
+saveRDS(est_sigpro_subdata, "./data/raw/extended_sel_tab_tests_simulated_tests_sounds_sigpro_subdata.RDS")
+
+```
+
+```{r measure degradation, eval = FALSE, echo = FALSE}
+
+est_sigpro_subdata <- readRDS("./data/raw/extended_sel_tab_tests_simulated_tests_sounds_sigpro_subdata.RDS")
+
+# measure degradation
+est_sigpro_subdata <- signal_to_noise_ratio(est_sigpro_subdata, mar = 0.02, pb = FALSE, parallel = 10, type = 1, wl = 512, ovlp = 50)
+source("~/Dropbox/R_package_testing/baRulho/R/internal_functions.R")
+source("~/Dropbox/R_package_testing/baRulho/R/blur_ratio.R")
+
+est_sigpro_subdata <- blur_ratio(est_sigpro_subdata, pb = FALSE, parallel = 1, wl = 256, ovlp = 50, ssmooth = NULL)
+
+source("~/Dropbox/R_package_testing/baRulho/R/tail_to_signal_ratio.R")
+
+est_sigpro_subdata <- tail_to_signal_ratio(est_sigpro_subdata, pb = FALSE, parallel = 10, mar = 0.04, type = 1, wl = 512, ovlp = 99)
+
+source("~/Dropbox/R_package_testing/baRulho/R/excess_attenuation.R")
+
+est_sigpro_subdata <- excess_attenuation(X = est_sigpro_subdata, pb = FALSE, parallel = 10, type = "Dabelsteen", ovlp = 50, wl = 1024)
+
+
+sigpro_data$sound.files <- paste0(sigpro_data$org.sf, ".wav_", sigpro_data$sound)
+
+sigpro_data$source <- "sigpro"
+
+barulho_data2 <- barulho_data <- sigpro_data
+barulho_data$source <- "baRulho"
+barulho_data2$source <- "baRulho2"
+
+barulho_data$SNR <- sapply(1:nrow(barulho_data), function(x){
+    
+    y <- est_sigpro_subdata$signal.to.noise.ratio[est_sigpro_subdata$sound.files == sigpro_data$sound.files[x]]
+    
+    if (length(y) == 0)
+        y <- NA
+    
+    return(y)
+})
+
+
+barulho_data$blur_ratio <- sapply(1:nrow(barulho_data), function(x){
+    
+    y <- est_sigpro_subdata$blur.ratio[est_sigpro_subdata$sound.files == sigpro_data$sound.files[x]]
+    
+    if (length(y) == 0)
+        y <- NA
+    
+    return(y)
+})
+
+barulho_data$TSR <- sapply(1:nrow(barulho_data), function(x){
+    
+    y <- est_sigpro_subdata$tail.to.signal.ratio[est_sigpro_subdata$sound.files == sigpro_data$sound.files[x]]
+    
+    if (length(y) == 0)
+        y <- NA
+    
+    return(y)
+})
+
+barulho_data$k <- sapply(1:nrow(barulho_data), function(x){
+
+    y <- est_sigpro_subdata$k[est_sigpro_subdata$sound.files == sigpro_data$sound.files[x]]
+
+    if (length(y) == 0)
+        y <- NA
+
+    
+    return(y)
+})
+
+barulho_data$excess_attenuation <- sapply(1:nrow(barulho_data), function(x){
+    
+    y <- est_sigpro_subdata$excess.attenuation[est_sigpro_subdata$sound.files == sigpro_data$sound.files[x]]
+    
+ if (length(y) == 0)
+        y <- NA
+    
+    return(y)
+})
+
+## add metrics measured on large data set
+degrad_df <- read.csv("./data/processed/barulho_degradation_metrics.csv",
+    stringsAsFactors = FALSE)
+
+barulho_data2$SNR <- sapply(1:nrow(barulho_data2), function(x){
+    
+    y <- degrad_df$signal.to.noise.ratio.t1[degrad_df$sound.files == barulho_data2$sound.files[x]]
+    
+    if (length(y) == 0)
+        y <- NA
+    
+    return(y)
+})
+
+barulho_data2$blur_ratio <- sapply(1:nrow(barulho_data2), function(x){
+    
+    y <- degrad_df$blur.ratio[degrad_df$sound.files == barulho_data2$sound.files[x]]
+    
+    if (length(y) == 0)
+        y <- NA
+    
+    return(y)
+})
+
+barulho_data2$TSR <- sapply(1:nrow(barulho_data2), function(x){
+    
+    y <- degrad_df$tail.to.signal.ratio[degrad_df$sound.files == barulho_data2$sound.files[x]]
+    
+    if (length(y) == 0)
+        y <- NA
+    
+    return(y)
+})
+
+barulho_data2$excess_attenuation <- sapply(1:nrow(barulho_data2), function(x){
+    
+    y <- degrad_df$excess.attenuation[degrad_df$sound.files == barulho_data2$sound.files[x]]
+    
+    if (length(y) == 0)
+        y <- NA
+    
+    return(y)
+})
+
+
+
+# comb_data_rows <- rbind(barulho_data, sigpro_data)
+
+barulho_subdata <- barulho_data[, c("SNR", "TSR", "blur_ratio", "excess_attenuation")]
+barulho_subdata2 <- barulho_data2[, c("SNR", "TSR", "blur_ratio", "excess_attenuation")]
+
+names(barulho_subdata) <- paste(names(barulho_subdata), "bRlho", sep = ".")
+names(barulho_subdata2) <- paste(names(barulho_subdata2), "bRlho2", sep = ".")
+
+comb_data_cols <- cbind(sigpro_data, barulho_subdata, barulho_subdata2)
+
+write.csv(comb_data_cols, "./data/processed/combined_sigpro_barulho", row.names = FALSE)
+
+```
+
+Dotted lines show x = y
+
+```{r compare with plots, results= 'asis', fig.height= 3}
+
+comb_data_cols <- read.csv("./data/processed/combined_sigpro_barulho")
+
+
+for (x in c("SNR", "TSR", "blur_ratio", "excess_attenuation")){
+   
+    cat("<br>")
+    cat(x)
+    cat("<br>")
+   # print(paste("Pearson correlation clips:", round(cor(comb_data_cols[comb_data_cols$format == "Clips", x], comb_data_cols[comb_data_cols$format == "Clips", paste(x, "bRlho", sep = "-")], use = "pairwise.complete.obs"), 2)))
+    
+    if (x != "TSR"){
+    cr.clps <- cor.test(comb_data_cols[comb_data_cols$format == "Clips", x], comb_data_cols[comb_data_cols$format == "Clips", paste(x, "bRlho", sep = ".")], use = "pairwise.complete.obs")
+     p <- round(cr.clps$p.value, 3)
+    if (p < 0.001) p <- " < 0.001"
+    print(paste("Pearson correlation clips: r=", round(cr.clps$estimate, 2), "; p =", p))
+ cat("<br>")
+    icctest <- icc(comb_data_cols[comb_data_cols$format == "Clips", c(x, paste(x, "bRlho", sep = "."))])
+     p <- round(icctest$p.value, 3)
+    if (p < 0.001) p <- " < 0.001"
+    print(paste("Intraclass correlation coef=", round(icctest$value, 2), "; p =", p))
+
+    }          
+    cat("<br>")
+    cr.fr <- cor.test(comb_data_cols[comb_data_cols$format != "Clips", x], comb_data_cols[comb_data_cols$format != "Clips", paste(x, "bRlho", sep = ".")], use = "pairwise.complete.obs")
+    p <- round(cr.fr$p.value, 3)
+    if (p < 0.001) p <- " < 0.001"
+    print(paste("Pearson correlation full recordings: r=",  round(cr.fr$estimate, 2), "; p =", p))
+     cat("<br>")
+    icctest <- icc(comb_data_cols[comb_data_cols$format != "Clips", c(x, paste(x, "bRlho", sep = "."))])
+     p <- round(icctest$p.value, 3)
+    if (p < 0.001) p <- " < 0.001"
+    print(paste("Intraclass correlation coef=", round(icctest$value, 2), "; p =", p))
+
+
+    plt <- ggplot(comb_data_cols, aes(x = get(x), y = get(paste(x, "bRlho", sep = ".")))) +
+        geom_point(color = viridis(10, alpha = 0.7)[7]) +
+    labs(x = paste(x, "SIGPRO"), y = paste(x, "baRulho")) +
+        facet_wrap(~ format, scales = "free_x") +
+        geom_abline(slope = 1, intercept = 0, lty = 3) +
+    theme_classic() 
+  
+    cat("<br>")
+
+    print(plt)
+}
+
+```
+
+Compare to remeasured data
+```{r compare with plots remeasured and large data measurements, results= 'asis', fig.height= 3}
+
+comb_data_cols <- read.csv("./data/processed/combined_sigpro_barulho")
+
+
+for (x in c( "blur_ratio", "excess_attenuation")){
+   
+    cat("<br>")
+    cat(x)
+    cat("<br>")
+
+    X <- comb_data_cols[comb_data_cols$format == "Clips", paste(x, "bRlho2", sep = ".")]
+    Y <- comb_data_cols[comb_data_cols$format == "Clips", paste(x, "bRlho", sep = ".")]
+    cr.clps <- cor.test(X, Y, use = "pairwise.complete.obs")
+     p <- round(cr.clps$p.value, 3)
+    if (p < 0.001) p <- " < 0.001"
+    print(paste("Pearson correlation clips: r=", round(cr.clps$estimate, 2), "; p =", p))
+ cat("<br>")
+    icctest <- icc(cbind(X, Y))
+     p <- round(icctest$p.value, 3)
+    if (p < 0.001) p <- " < 0.001"
+    print(paste("Intraclass correlation coef=", round(icctest$value, 2), "; p =", p))
+
+
+    plt <- ggplot(comb_data_cols[comb_data_cols$format == "Clips", ], aes(x = get(paste(x, "bRlho2", sep = ".")), y = get(paste(x, "bRlho", sep = ".")))) +
+        geom_point(color = viridis(10, alpha = 0.7)[7]) +
+    labs(x = paste(x, "baRulho from entire data set"), y = paste(x, "baRulho")) +
+        geom_abline(slope = 1, intercept = 0, lty = 3) +
+    theme_classic() 
+  
+    cat("<br>")
+
+    print(plt)
+}
+
+```
+
+
+<div class="alert alert-success">
+
+&nbsp; 
+
+# Takeaways
+
+Similar results between SIGPRO and baRulho
+</div>
+
+&nbsp;
+
+<!-- '---' adds a gray vertical line -->
+
+---
+
+&nbsp; 
+ 
+ <!-- add packages used, system details and versions  -->
+ 
+<font size="4">Session information</font>
+
+```{r session info, echo=F}
+
+sessionInfo()
+
+```
+
+
+```{r, eval= FALSE}
+
+est_sigpro_subdata <- readRDS("./data/raw/extended_sel_tab_tests_simulated_tests_sounds_sigpro_subdata.RDS")
+
+source("~/Dropbox/R_package_testing/baRulho/R/excess_attenuation.R")
+source("~/Dropbox/R_package_testing/baRulho/R/internal_functions.R")
+
+est_sigpro_subdata_df <- excess_attenuation(X = est_sigpro_subdata, pb = FALSE, parallel = 10, type = "Dabelsteen", ovlp = 50, wl = 1024, output = "data.frame")
+
+est.alg.sim.all <- readRDS("./data/raw/extended_sel_tab_tests_simulated_tests_sounds.RDS")
+names(est.alg.sim.all)[13] <- "distance" 
+
+est.alg.sim.all$signal.type <- as.character(est.alg.sim.all$template)
+all_df <- excess_attenuation(X = est.alg.sim.all, pb = FALSE, parallel = 1, type = "Dabelsteen", ovlp = 50, wl = 1024, output = "data.frame")
+
+est.alg.sim.all <- excess_attenuation(X = est.alg.sim.all, pb = TRUE, parallel = 1, type = "Dabelsteen", ovlp = 50, wl = 1024, output = "est")
+
+est_sigpro_subdata_df$ea <- sapply(est_sigpro_subdata_df$sound.files, function(x) 
+    all_df$excess.attenuation[all_df$sound.files == x])
+
+est_sigpro_subdata_df$ea.est <- sapply(est_sigpro_subdata_df$sound.files, function(x) 
+    est.alg.sim.all$excess.attenuation[est.alg.sim.all$sound.files == x])
+
+
+```
+
